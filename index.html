@@ -1313,7 +1313,10 @@ function freshState(){
     ],
     policy: JSON.parse(JSON.stringify(DEFAULT_POLICY)),
     periodCosts: { 'p_2025_01':0,'p_2025_02':0,'p_2025_03':0,'p_2025_04':0,'p_2025_05':0,'p_2025_06':0,'p_2025_07':0,'p_2025_08':0,'p_2025_09':0,'p_2025_10':0,'p_2025_11':0, 'p_2026_01': 200000, 'p_2026_02': 200000, 'p_2026_03': 200000, 'p_2026_04': 200000, 'p_2026_05': 200000, 'p_2026_06': 200000, 'p_2026_07': 200000, 'p_2026_08': 200000, 'p_2025_dec': 0 }, // الهدف الشهري (تكاليف مباشرة وغير مباشرة) — يبدأ يناير 2026؛ عُدِّل من 250,000 إلى 200,000 في 2026-09-03 (راجع a30) — قابل للتعديل شهريًا من لوحة التحكم مباشرة
-    employeeTargets: {}, // empId -> هدف الربح الشهري الفردي (ريال سعودي)؛ 0/غير محدد = أي ربح موجب يُعتبر تحقيقًا للهدف
+    employeeTargets: {}, // empId -> هدف الربح الشهري الفردي الافتراضي (ريال سعودي)؛ يُستخدم لأي شهر لا يوجد له استثناء خاص أدناه. 0/غير محدد = أي ربح موجب يُعتبر تحقيقًا للهدف
+    employeeTargetOverrides: {}, // periodId -> {empId -> هدف مخصَّص لهذا الشهر بالذات فقط} — يطغى على employeeTargets الافتراضي حين يوجد، لكل موظف ولكل شهر على حدة
+    employeeCommissionCaps: {}, // empId -> {min:number|null, max:number|null} — سقف أدنى/أعلى شهري اختياري لعمولة الموظف المحسوبة (قبل التعديلات اليدوية)، يُطبَّق كل شهر على حدة لكل موظف
+    policyTargetPeriodId: null, // اختيار شاشة السياسة: null = تعديل الهدف الافتراضي لكل الموظفين، أو periodId لتعديل استثناء شهر محدد
     commissions: {}, // keyed by periodId -> {employeeId: commissionRecord}
     // طلبات تعديل يقدّمها موظف المبيعات نفسه على كشف عمولته (مراجعة تكلفة/ربح/قيمة، خصم أو زيادة) — منفصلة عن
     // rec.adjustments (تعديلات الإدارة المباشرة)؛ عند اعتمادها من المالية/الإدارة تُضاف كتعديل فعلي في rec.adjustments.
@@ -1359,7 +1362,11 @@ function freshState(){
       {id:'a35', at:'2026-09-07 12:00', by:'المدير المالي', action:'تصحيح: ملف PDF كان يخرج فارغًا — استبدال حل a34 بإصلاح جذري صحيح', details:'بلاغ فوري بعد a34: ملف PDF المُصدَّر صار يخرج فارغًا تمامًا (بدل الحروف المتراكبة سابقًا). السبب: خيار html2canvas الذي أُضيف في a34 (foreignObjectRendering:true) تقنية تجريبية غير مستقرة (موثَّقة رسميًا في مكتبة html2canvas بأنها "experimental") — تعمل في بعض بيئات المتصفح وتفشل بصمت (صفحة فارغة/canvas ملوَّث) في بيئات أخرى، وهو ما حدث فعليًا عند الاستخدام الحقيقي رغم نجاحها في بيئة اختبار محلية. تم بناء أداة اختبار حقيقية هذه المرة (تثبيت html2canvas فعليًا عبر npm محليًا — بخلاف جلسة a34 التي لم تتمكن من اختبار المكتبة الفعلية لحجب الوصول لـ cdnjs) وتصوير التقارير فعليًا كـ canvas لتشخيص المشكلة بدقة بدل التخمين. النتيجة: تبيّن أن السبب الجذري الحقيقي لتراكب الحروف لم يكن نقص دعم html2canvas للعربية بشكل عام (معظم النصوص في الصفحة تُرسَم بشكل سليم تمامًا)، بل تحديدًا قاعدة CSS الخاصة برؤوس الجداول (th{letter-spacing:.02em}) — إذ يضطر html2canvas، متى وُجد letter-spacing غير الصفري، لرسم كل حرف منفصلًا بدل رسم الكلمة العربية المتصلة ككتلة واحدة، فتنكسر أشكال الحروف المتصلة (تحقَّق ذلك باختبار معزول: نفس النص بلا letter-spacing يُرسَم سليمًا 100%، ومع letter-spacing:.02em فقط يتشوَّه، وmع text-transform:uppercase وحده بلا letter-spacing يبقى سليمًا). الإصلاح النهائي: (1) حذف letter-spacing من قاعدة th نهائيًا (تأثيره البصري كان طفيفًا جدًا أصلًا ولا خسارة تُذكر). (2) إلغاء foreignObjectRendering:true من إعدادات html2canvas في exportPagePDF نهائيًا (رجوعًا للوضع الافتراضي الأكثر استقرارًا عبر المتصفحات). (3) الإبقاء على انتظار document.fonts.ready من a34 (إجراء احترازي غير ضار). تم التحقق فعليًا (وليس افتراضًا) بتصوير ثلاث شاشات تقارير مختلفة (كشف راتب، الموظفون والعمولات، التقرير الشامل للشركة) عبر html2canvas حقيقي محليًا، وجميعها خرجت سليمة تمامًا بلا أي تراكب أو فراغ.'},
       {id:'a36', at:'2026-09-07 20:00', by:'المدير المالي', action:'طلبات تعديل العمولة من الموظف + تعديل بريد المستخدمين وإرسال الدعوات + دور محاسب جديد', details:'بناءً على توجيهين مباشرين متتاليين: (1) أُضيفت في شاشة "كشف عمولتي" إمكانية جديدة لموظف المبيعات (وقائد الفريق) لتقديم "طلب تعديل" على عمولة الفترة الحالية — يحدد الموظف الجانب المتعلق بالطلب (التكلفة/الربح/القيمة/أخرى)، ونوعه (خصم-خسارة أو إضافة-زيادة)، والقيمة والسبب، مع حقل اختياري لتاريخ الصرف المطلوب. الطلب يُحفظ بحالة "بانتظار المراجعة" (STATE.adjustmentRequests) ولا يؤثر على العمولة الفعلية حتى اعتماده. من يملك صلاحية "adjust" أو "propose_adjust" (المدير المالي، المدير التنفيذي، مدير المبيعات، والمحاسب الجديد) يرى في نفس الشاشة زرَّي "اعتماد"/"رفض" لكل طلب معلَّق، مع حقل تاريخ صرف عند الاعتماد (معبَّأ افتراضيًا بالتاريخ الذي طلبه الموظف، قابل للتعديل قبل الاعتماد). الاعتماد يحوّل الطلب فورًا إلى تعديل فعلي مُدرَج ضمن جدول تعديلات العمولة (rec.adjustments) بنفس آلية التعديلات اليدوية الحالية، مع تسجيل تاريخ الصرف في عرض الجدول. أُضيف أيضًا تنبيه في لوحة التحكم الرئيسية (لمن يملك صلاحية المراجعة) يُظهر عدد طلبات التعديل المعلَّقة لفترة العرض الحالية. الموظف لا يمكنه تقديم طلب جديد إن كان لديه طلب معلَّق بالفعل لنفس الفترة (يُطلب منه انتظار البتّ أولًا). (2) أُضيف حقل "البريد الإلكتروني" لكل حساب مستخدم (موظف أو منصب إداري) — قابل للتعديل من نافذة تعديل المستخدم (مع تحقق من صيغة البريد)، وأُضيف زر "دعوة" بجانب كل مستخدم في شاشة "إدارة المستخدمين" يبني رسالة بريدية (mailto:) جاهزة تتضمن اسم المستخدم وكلمة المرور ويفتحها في برنامج البريد الافتراضي؛ إن لم يكن للمستخدم بريد مسجَّل يظهر تنبيه بذلك بدل محاولة الإرسال (لا توجد قدرة إرسال بريد فعلي من خادم داخل ملف HTML قائم بذاته — هذا أقصى ما يمكن تحقيقه بدون بنية خلفية). (3) أُضيف دور صلاحيات جديد "محاسب" (accountant) — حساب منصب مستقل (كحسابات المدير التنفيذي/المالي/مدير المبيعات، غير مرتبط بموظف مبيعات) يملك صلاحيات المراجعة والاعتماد لطلبات التعديل (propose_adjust)، وتصدير التقارير (export)، والاطلاع على سجل التدقيق (view_audit) وكل بيانات الشركة (view_all) — لكن بلا صلاحية تعديل السياسة أو استيراد البيانات أو المطابقة أو اعتماد الدفع أو الاعتماد النهائي للعمولة/السياسة، بما يطابق دوره كمراجع ومدقق مالي دون سلطة إدارية تنفيذية. يُنشأ حساب المحاسب من شاشة "إدارة المستخدمين" (زر "+ إضافة حساب محاسب") بنفس آلية توليد اسم المستخدم/كلمة المرور التلقائية المتّبعة لحسابات المناصب الأخرى. تم التحقق من كل ما سبق عبر 36 اختبارًا آليًا (jsdom) يغطي: تدفق تقديم/اعتماد/رفض طلب التعديل كاملًا والتحقق من انعكاسه على rec.adjustments وتاريخ الصرف، دخول حساب محاسب فعلي عبر تسجيل الدخول الحقيقي والتحقق من حجب شاشات الاستيراد/المطابقة/الفرق/المستخدمين عنه عبر حارس التوجيه الفعلي في renderAll، وتصوير فعلي (Playwright) لشاشات: نموذج تقديم الطلب، بطاقة الطلب المعلَّق، شاشة مراجعة المحاسب مع زرَّي الاعتماد/الرفض، تنبيه لوحة التحكم، وشاشة إدارة المستخدمين بالعمود والزر الجديدين — جميعها ظهرت بلا أخطاء JS وبلا أي كسر في الأدوار والشاشات القائمة سابقًا.'},
       {id:'a37', at:'2026-09-09 18:30', by:'المدير المالي', action:'إصلاح زر "دعوة" — رسالة "This content is blocked" عند النشر كصفحة Artifact', details:'بلاغ: عند الضغط على زر "دعوة" في شاشة إدارة المستخدمين، تظهر شاشة رمادية "This content is blocked. Contact the site owner to fix the issue." بدل فتح تطبيق البريد. السبب: النظام صار يُنشر الآن كصفحة Artifact مستضافة على claude.ai (بدل ملف HTML مستقل يُفتح مباشرة في المتصفح كما كان الحال مع GitHub Pages)، وصفحات Artifact تُعرَض داخل إطار معزول (sandboxed iframe) يحجب أي محاولة تنقّل (navigation) يبدأها السكربت نفسه برمجيًا — وهذا بالضبط ما كان يفعله sendInvitation() سابقًا: إنشاء رابط mailto: مخفي واستدعاء a.click() عليه تلقائيًا دون تدخّل المستخدم، فيُحجَب فورًا. الإصلاح: استُبدلت آلية الفتح التلقائي بنافذة منبثقة (تتبع نفس نمط النوافذ الأخرى في النظام) تعرض نص الدعوة كاملًا (المستلم، الموضوع، النص ببيانات الدخول) في مربع نص للقراءة، مع زر أساسي "نسخ نص الدعوة" يستخدم navigator.clipboard.writeText مع مسار احتياطي (تحديد النص + إشعار للنسخ اليدوي Ctrl+C) إن تعذّر الوصول لحافظة النظام، إضافة إلى رابط mailto: حقيقي (وليس منقورًا برمجيًا) يفتحه المستخدم بنفسه بنقرة يدوية فعلية — وهذا مسار أكثر احتمالًا للعمل من الاستدعاء البرمجي لأن أغلب البيئات المعزولة تسمح بتنقّل يبدأه المستخدم فعليًا وتحجب فقط ما يبدأه السكربت. النسخ اليدوي هو المسار الأساسي الموثوق الآن عبر كل بيئات الاستضافة (Artifact، GitHub Pages، أو أي متصفح). تم التحقق عبر اختبار jsdom مخصص: تسجيل دخول فعلي، إنشاء حساب محاسب، استدعاء sendInvitation، والتأكد من ظهور النافذة ومحتوى النص الصحيح وزر النسخ ورابط mailto سليمَين، إضافة إلى مسار الحساب بلا بريد (يظهر تنبيه ولا يفتح النافذة، دون أي استثناء).'},
-      {id:'a38', at:'2026-09-09 19:15', by:'المدير المالي', action:'إرسال تلقائي فعلي لدعوة الدخول عبر Gmail', details:'بناءً على توجيه مباشر: أُضيف في نافذة "دعوة الدخول" (sendInvitation) زر جديد "إرسال تلقائي عبر Gmail" بجانب زرَّي النسخ ورابط mailto الموجودين مسبقًا (a37). الزر يستخدم قدرة mcp التشغيلية الخاصة بصفحات Artifact على claude.ai (window.claude.use) لاستدعاء أداة Gmail الفعلية send_message وإرسال رسالة البريد ببيانات الدخول مباشرة إلى بريد المستخدم دون أي تدخل يدوي. الزر يظهر فقط حين تتوفر قدرة mcp فعليًا (أي عند فتح الصفحة كـ Artifact منشور، وليس كملف HTML مستقل مثل GitHub Pages) — وإلا يبقى مخفيًا ويعمل النسخ اليدوي ورابط mailto كما هما دون أي تغيير. تم اختبار استدعاء حقيقي لأداة Gmail send_message داخل هذه الجلسة قبل كتابة أي كود (استجابة فعلية: {id, threadId})، وتمت معالجة كل رمز خطأ محتمل (McpError.code) برسالة عربية مستقلة وواضحة بدل رسالة عامة واحدة: server_not_connected (يلزم ربط Gmail)، needs_reauth (يلزم فصل وإعادة ربط Gmail لمنح صلاحية الإرسال — وهو ما حدث فعليًا أول مرة: الاتصال الأول كان بصلاحيات قراءة/بحث فقط بلا صلاحية gmail.send، فتم فصله وإعادة ربطه بصلاحيات أوسع)، not_in_manifest، selection_required، cancelled، rate_limited، tool_error، وحالة افتراضية عامة تعرض رسالة الخطأ الأصلية. ملاحظة أمان مهمة (تم إبلاغ الإدارة بها والموافقة عليها): الإرسال يتم فعليًا من حساب Gmail الشخصي الخاص بمن يفتح الصفحة ويضغط الزر (بصلاحياته وبيانات اعتماده الخاصة عبر اتصاله على claude.ai)، وليس من خادم مركزي مستقل تابع لترافليون — فكل من يملك صلاحية إرسال الدعوات ويريد استخدام هذا الزر يحتاج أن يكون حسابه الشخصي على Gmail متصلًا بحسابه على claude.ai.'}
+      {id:'a38', at:'2026-09-09 19:15', by:'المدير المالي', action:'إرسال تلقائي فعلي لدعوة الدخول عبر Gmail', details:'بناءً على توجيه مباشر: أُضيف في نافذة "دعوة الدخول" (sendInvitation) زر جديد "إرسال تلقائي عبر Gmail" بجانب زرَّي النسخ ورابط mailto الموجودين مسبقًا (a37). الزر يستخدم قدرة mcp التشغيلية الخاصة بصفحات Artifact على claude.ai (window.claude.use) لاستدعاء أداة Gmail الفعلية send_message وإرسال رسالة البريد ببيانات الدخول مباشرة إلى بريد المستخدم دون أي تدخل يدوي. الزر يظهر فقط حين تتوفر قدرة mcp فعليًا (أي عند فتح الصفحة كـ Artifact منشور، وليس كملف HTML مستقل مثل GitHub Pages) — وإلا يبقى مخفيًا ويعمل النسخ اليدوي ورابط mailto كما هما دون أي تغيير. تم اختبار استدعاء حقيقي لأداة Gmail send_message داخل هذه الجلسة قبل كتابة أي كود (استجابة فعلية: {id, threadId})، وتمت معالجة كل رمز خطأ محتمل (McpError.code) برسالة عربية مستقلة وواضحة بدل رسالة عامة واحدة: server_not_connected (يلزم ربط Gmail)، needs_reauth (يلزم فصل وإعادة ربط Gmail لمنح صلاحية الإرسال — وهو ما حدث فعليًا أول مرة: الاتصال الأول كان بصلاحيات قراءة/بحث فقط بلا صلاحية gmail.send، فتم فصله وإعادة ربطه بصلاحيات أوسع)، not_in_manifest، selection_required، cancelled، rate_limited، tool_error، وحالة افتراضية عامة تعرض رسالة الخطأ الأصلية. ملاحظة أمان مهمة (تم إبلاغ الإدارة بها والموافقة عليها): الإرسال يتم فعليًا من حساب Gmail الشخصي الخاص بمن يفتح الصفحة ويضغط الزر (بصلاحياته وبيانات اعتماده الخاصة عبر اتصاله على claude.ai)، وليس من خادم مركزي مستقل تابع لترافليون — فكل من يملك صلاحية إرسال الدعوات ويريد استخدام هذا الزر يحتاج أن يكون حسابه الشخصي على Gmail متصلًا بحسابه على claude.ai.'},
+      {id:'a39', at:'2026-09-14 18:30', by:'المدير المالي', action:'هدف فردي شهري مستقل لكل شهر + سقف أدنى/أعلى اختياري للعمولة', details:'بلاغ: الهدف الفردي الشهري لكل موظف (المستخدم في "شبكة الأمان الفردية" ضمن نظام الهدف الشهري) كان رقمًا واحدًا ثابتًا يُطبَّق على كل الأشهر لنفس الموظف، دون إمكانية لتخصيص هدف مختلف له في شهر معيّن. الإصلاح: (1) أُضيف employeeTargetOverrides (خريطة periodId ← {empId ← هدف خاص بذلك الشهر فقط}) يطغى على الهدف الافتراضي (employeeTargets) حين يوجد؛ getEmployeeTarget(empId, periodId) تعطي الأولوية لاستثناء الشهر إن وُجد ثم تعود للهدف الافتراضي. rebuildAllCommissionsForPeriod يمرر الآن periodId عند قراءة هدف كل موظف، فتنعكس الاستثناءات في احتساب "شبكة الأمان الفردية" شهريًا وبشكل مستقل تمامًا بين الأشهر. (2) في شاشة السياسة، أُضيف محدِّد "عرض/تعديل الهدف لِـ" (افتراضي لكل الأشهر / استثناء لشهر محدد) — عند اختيار شهر، يظهر لكل موظف مربع اختيار "تخصيص" مع حقل رقمي يُفعَّل عند تحديده فقط؛ الحفظ يضيف/يحذف الاستثناء حسب حالة المربع دون التأثير على الهدف الافتراضي أو باقي الأشهر. (3) بناءً على طلب إضافي: أُضيف "سقف العمولة الشهرية لكل موظف" (اختياري) — حد أدنى مضمون و/أو حد أعلى، يُطبَّق شهريًا لكل موظف على العمولة المحسوبة algorithmيًا (بعد اختيار المسار: وعاء الفريق أو العمولة الأساسية الفردية أو شرائح النظام القديم) وقبل أي تعديل يدوي؛ الحد الأعلى يُطبَّق أولًا ثم الحد الأدنى، ولا يُطبَّق إطلاقًا على موظف مستبعد. يُعرض تنبيه واضح للموظف في كشف عمولته عند تفعيل أي من الحدّين، يوضّح المبلغ الأصلي قبل التسقيف. أُضيف تحقق عند الحفظ يمنع ضبط حد أدنى أكبر من الحد الأعلى لنفس الموظف. تم التحقق عبر 26 فحصًا آليًا (jsdom): استقلالية الهدف بين شهرين لنفس الموظف، تطبيق الحد الأدنى/الأعلى وتوثيقهما في السجل، استثناء الموظف المستبعد من التسقيف، عمل عناصر واجهة السياسة (المحدِّد، مربعات التخصيص، حفظ/حذف الاستثناء)، منع الحفظ عند تعارض الحدّين، وتنظيف الاستثناءات والسقوف تلقائيًا عند حذف موظف.'},
+      {id:'a40', at:'2026-09-14 19:10', by:'المدير المالي', action:'إصلاح: خيارات ناقصة في القائمة الجانبية لقائد الفريق', details:'بلاغ: "ليست كل الخيارات الجانبية" ظاهرة. السبب: عنصرا القائمة "كشف عمولتي" و"كشف راتبي الشهري" (مجموعة "الرئيسية") كانا مُعلَّمين بخاصية employeeOnly يُعرَضان فقط لدور "موظف مبيعات" حصرًا (STATE.role===\'employee\')، بينما دالة الصلاحيات canViewCurrentRoute تسمح فعليًا لدور "قائد فريق" أيضًا بفتح كشف عمولته وراتبه الشخصي — فكانت هذه الوظيفة متاحة له لكن بلا أي رابط ظاهر في القائمة الجانبية للوصول إليها مباشرة (يحتاج للف عبر شاشة "الموظفون والعمولات" والنقر على اسمه). الإصلاح: (1) عُدِّل شرط عرض عنصري القائمة ليشمل قائد الفريق أيضًا (STATE.role===\'employee\' || STATE.role===\'team_lead\'). (2) لضمان أن هذين الرابطين يعرضان دومًا سجل المستخدم نفسه (وليس آخر موظف كان معروضًا في الجلسة — مثلًا لو كان قائد الفريق قد فتح كشف أحد أعضاء فريقه قبل ذلك)، أُضيفت معالجة نقر خاصة تمرّر empId الخاص بالمستخدم الحالي صراحةً عند الضغط على أي من الرابطين، بدل الاعتماد على STATE.selectedEmployeeId القديم المحتمل تغيّره. تم التحقق عبر 9 فحوصات آلية (jsdom): ظهور الرابطين لقائد فريق تم إنشاؤه فعليًا عبر تعيينه قائدًا لفريق جديد، تصحيح الموظف المعروض عند النقر رغم وجود قيمة قديمة مختلفة في الحالة، عدم حدوث أي تراجع لدور "موظف مبيعات" العادي (يستمر برؤية الرابطين ولا يرى "لوحة التحكم" كما هو متوقَّع).'},
+      {id:'a41', at:'2026-09-14 19:35', by:'المدير المالي', action:'إصلاح إضافي: تكرار "كشف الراتب الشهري" في القائمة الجانبية بعد a40', details:'بلاغ متابعة بعد a40: "لا تزال توجد مشكلة في الخيارات الجانبية". السبب الفعلي المكتشف عند الفحص المنهجي الشامل (تصوير القائمة الجانبية فعليًا عبر Playwright لكل الأدوار الستة: مدير تنفيذي، مالي، مدير مبيعات، محاسب، موظف مبيعات، قائد فريق): يوجد عنصران مختلفان بنفس المعرّف id="payslip" في تعريف NAV — أحدهما "كشف راتبي الشهري" (employeeOnly، الكشف الذاتي) والآخر "كشف الراتب الشهري" في مجموعة "تقارير" (مخصَّص للمدراء الذين يملكون صلاحية export لعرض راتب أي موظف). دالة canViewCurrentRoute تسمح لدوري "موظف مبيعات" و"قائد فريق" بفتح شاشة "payslip" دون قيد صلاحية — وهذا مقصود من أجل العنصر الأول فقط — لكن إصلاح a40 اعتمد على هذه الدالة وحدها لكل العناصر غير employeeOnly، فسرّب عنصر "تقارير" الثاني أيضًا لدوري الموظف وقائد الفريق رغم عدم امتلاكهما صلاحية export، فظهر الخياران معًا بنفس المعنى تقريبًا ("كشف راتبي الشهري" و"كشف الراتب الشهري") بشكل مكرر ومربك — وهذا ما لاحظه المستخدم كمشكلة لا تزال قائمة بعد a40. الإصلاح: أُضيفت خاصية strictPerm:true على عنصر "تقارير" تحديدًا (فقط)، تفرض التحقق من صلاحية العنصر (it.perm="export") صراحةً بصرف النظر عن سماح canViewCurrentRoute العام للشاشة، دون المساس بعنصر "الموظفون والعمولات" (الذي يعتمد فعليًا وبشكل مقصود على سماح canViewCurrentRoute الخاص بقائد الفريق دون صلاحية view_all كاملة). تم التحقق عبر تصوير Playwright فعلي لكل الأدوار الستة (لا أخطاء JS، ولا عناصر متكررة أو ناقصة بغير المتوقَّع) بالإضافة إلى 9 فحوصات jsdom تتحقق تحديدًا من ظهور "payslip" مرة واحدة فقط لكل دور، وبقاء "الموظفون والعمولات" ظاهرًا لقائد الفريق كما في a40.'},
+      {id:'a42', at:'2026-09-14 19:45', by:'المدير المالي', action:'تحسين بصري إضافي: إخفاء عناوين مجموعات القائمة الجانبية الفارغة', details:'لوحظ أثناء التحقق البصري الشامل من a41 (تصوير Playwright لكل الأدوار) أن عنوان مجموعة القائمة الجانبية (مثل "البيانات") كان يظهر دائمًا حتى لو لم يكن تحته أي رابط ظاهر لدور معيّن (مثل قائد الفريق أو المحاسب اللذين لا يملكان صلاحية استيراد/مطابقة) — فيظهر عنوان معلَّق بلا محتوى تحته، وهو ما يُضعف وضوح القائمة الجانبية بصريًا رغم عدم ارتباطه بأي خلل وظيفي. الإصلاح: renderShell يحسب الآن عناصر كل مجموعة أولًا، ويستبعد المجموعة بالكامل (العنوان وما تحته) إن لم يبق فيها أي عنصر بعد تطبيق فلترة الصلاحيات. تم التحقق بصريًا عبر تصوير Playwright فعلي لكل الأدوار الستة بعد التعديل (لا عناوين مجموعات فارغة، ولا أي أثر على عدد/ترتيب العناصر الظاهرة فعليًا لكل دور) مع إعادة تشغيل كل فحوصات jsdom السابقة (9/9 ناجحة دون تغيير).'}
     ]
   };
 }
@@ -1522,8 +1529,30 @@ function computeTierBreakdown(eligibleProfit, tiers){
 function getPeriodCost(periodId){
   return STATE.periodCosts[periodId] ?? 0;
 }
-function getEmployeeTarget(empId){
+// periodId اختياري: عند تمريره، يُعطى الأولوية لاستثناء ذلك الشهر تحديدًا (employeeTargetOverrides) إن وُجد،
+// وإلا يُستخدم الهدف الافتراضي (employeeTargets). بلا periodId يُرجَع الهدف الافتراضي دائمًا (لاستخدامه في
+// شاشات تعديل الهدف الافتراضي نفسها).
+function getEmployeeTarget(empId, periodId){
+  if(periodId){
+    const ov = STATE.employeeTargetOverrides[periodId];
+    if(ov && ov[empId]!==undefined && ov[empId]!==null) return ov[empId];
+  }
   return STATE.employeeTargets[empId] ?? 0;
+}
+function getEmployeeCommissionCap(empId){
+  return STATE.employeeCommissionCaps[empId] || {min:null, max:null};
+}
+// يُطبَّق سقف أدنى/أعلى اختياري (إن حُدِّد لهذا الموظف) على مبلغ العمولة المحسوب algorithmيًا (قبل التعديلات
+// اليدوية) لكل شهر على حدة — الحد الأعلى يُطبَّق أولًا ثم الحد الأدنى (بحيث يبقى الحد الأدنى هو الضمان
+// النهائي في حال ضبط الطرفين بالخطأ بحيث min>max). لا يُطبَّق على موظف مستبعد (يبقى صفرًا دائمًا).
+function applyCommissionCap(amount, empId, excluded){
+  const caps = getEmployeeCommissionCap(empId);
+  let result = amount, capApplied = null;
+  if(!excluded){
+    if(caps.max!=null && result>caps.max){ result = Math.max(0,caps.max); capApplied='max'; }
+    if(caps.min!=null && result<caps.min){ result = caps.min; capApplied='min'; }
+  }
+  return { amount:result, capApplied, preCapAmount:amount, capMin:caps.min, capMax:caps.max };
 }
 function getTransactions(periodId, empId){
   return (STATE.transactionsByPeriod[periodId] && STATE.transactionsByPeriod[periodId][empId]) || null;
@@ -1646,7 +1675,7 @@ function rebuildAllCommissionsForPeriod(periodId){
     const fallbackOn = policy.individualFallback && policy.individualFallback.enabled;
     period.rows.forEach(r=>{
       const excluded = isExcludedEmp(r.emp);
-      const empTarget = getEmployeeTarget(r.emp);
+      const empTarget = getEmployeeTarget(r.emp, periodId);
       const individualTargetMet = r.profit>0 && r.profit>=empTarget;
       let salesShare=0, orderShare=0, weight=0, allocated=0, viaFallback=false, poolAmount=0, fallbackAmount=0;
       if(!excluded){
@@ -1666,6 +1695,10 @@ function rebuildAllCommissionsForPeriod(periodId){
           viaFallback = true;
         }
       }
+      // سقف أدنى/أعلى اختياري لكل موظف (إن حُدِّد من شاشة السياسة) — يُطبَّق على المبلغ المخصَّص الفعلي
+      // لهذا الشهر تحديدًا، بعد اختيار المسار (وعاء/عمولة أساسية فردية) وقبل التعديلات اليدوية.
+      const capResult = applyCommissionCap(allocated, r.emp, excluded);
+      allocated = capResult.amount;
       const prev = oldBucket[r.emp];
       bucket[r.emp] = {
         employeeId:r.emp, periodId, model:'target',
@@ -1675,7 +1708,8 @@ function rebuildAllCommissionsForPeriod(periodId){
                      salesPoolRate:sum.salesPoolRate, salesPool:sum.salesPool, totalSales:sum.totalSales, totalOrders:sum.totalOrders,
                      hasOrders:sum.hasOrders, blend:sum.blend, activeLevel:sum.activeLevel, levelsWithThreshold:sum.levelsWithThreshold,
                      salesShare, orderShare, weight, viaFallback, fallbackRate:policy.individualFallback?policy.individualFallback.rate:0,
-                     empTarget, individualTargetMet, fallbackOn, poolAmount, fallbackAmount },
+                     empTarget, individualTargetMet, fallbackOn, poolAmount, fallbackAmount,
+                     capApplied:capResult.capApplied, capMin:capResult.capMin, capMax:capResult.capMax, preCapAmount:capResult.preCapAmount },
         eligibleProfit: allocated, tierBreakdown: [], baseCommission: allocated,
         adjustments: prev ? prev.adjustments : [],
         excluded,
@@ -1706,13 +1740,18 @@ function rebuildAllCommissionsForPeriod(periodId){
       const calc = excluded
         ? { grossProfit:r.profit, refundAdj:0, eligibleProfit:0, tierBreakdown:[], baseCommission:0 }
         : computeLegacyForRow(r, policy);
+      // نفس سقف الحد الأدنى/الأعلى الاختياري لكل موظف يُطبَّق هنا أيضًا (النظام القديم) للاتساق — على مبلغ
+      // العمولة النهائي المحسوب من الشرائح، شهريًا لكل موظف.
+      const legacyCap = applyCommissionCap(calc.baseCommission, r.emp, excluded);
+      const baseCommission = legacyCap.amount;
       const prev = oldBucket[r.emp];
       bucket[r.emp] = {
         employeeId:r.emp, periodId, model:'legacy',
         grossSales:r.sales, grossProfit:r.profit, margin:r.margin,
         saleCount:r.saleCount, refundCount:r.refundCount,
         refundAdj: calc.refundAdj, eligibleProfit: calc.eligibleProfit,
-        tierBreakdown: calc.tierBreakdown, baseCommission: calc.baseCommission,
+        tierBreakdown: calc.tierBreakdown, baseCommission,
+        capInfo: { capApplied:legacyCap.capApplied, capMin:legacyCap.capMin, capMax:legacyCap.capMax, preCapAmount:legacyCap.preCapAmount },
         adjustments: prev ? prev.adjustments : [],
         excluded,
         status: prev ? prev.status : 'draft',
@@ -1750,7 +1789,12 @@ const NAV = [
   ]},
   {group:'تقارير', items:[
     {id:'reports', label:'التقارير والتصدير', ic:ICONS.reports, perm:'export'},
-    {id:'payslip', label:'كشف الراتب الشهري', ic:ICONS.payslip, perm:'export'},
+    // strictPerm:true — هذا عنصر مختلف عن "كشف راتبي الشهري" أعلاه (نفس id='payslip' لكن مقصود لعرض راتب أي
+    // موظف، لا الكشف الذاتي)؛ canViewCurrentRoute يسمح بشاشة 'payslip' لموظف المبيعات وقائد الفريق دون قيد
+    // خصيصًا لأجل كشفهم الشخصي أعلاه، فلو اعتمدنا عليها وحدها هنا لظهر هذا العنصر أيضًا لهما رغم عدم امتلاكهما
+    // صلاحية export فعليًا — فيتكرر "كشف الراتب الشهري" مرتين في القائمة بشكل مربك. strictPerm يفرض التحقق من
+    // it.perm صراحةً هنا بصرف النظر عن سماح الشاشة العام.
+    {id:'payslip', label:'كشف الراتب الشهري', ic:ICONS.payslip, perm:'export', strictPerm:true},
     {id:'audit', label:'سجل التدقيق', ic:ICONS.audit, perm:'view_audit'},
   ]},
 ];
@@ -1772,15 +1816,41 @@ const TITLES = {
 
 function renderShell(){
   const navlist = document.getElementById('navlist');
-  navlist.innerHTML = NAV.map(g=>`
+  // العناصر المُعلَّمة employeeOnly ("كشف عمولتي"/"كشف راتبي الشهري") كانت تُعرَض فقط لدور "موظف مبيعات"،
+  // رغم أن canViewCurrentRoute يسمح أيضًا لـ"قائد فريق" بفتح كشف عمولته وراتبه الشخصي — فكان قائد الفريق لا
+  // يرى هذين الخيارين إطلاقًا في القائمة الجانبية رغم أن الوصول إليهما مسموح له فعليًا. تم تصحيح ذلك.
+  const showEmployeeOnly = STATE.role==='employee' || STATE.role==='team_lead';
+  const visibleNav = NAV.map(g=>({
+    group: g.group,
+    items: g.items.filter(it=>{
+      if(it.employeeOnly) return showEmployeeOnly;
+      if(!canViewCurrentRoute(it.id)) return false;
+      if(it.strictPerm && !can(it.perm)) return false; // انظر تعليق تعريف هذا العنصر أعلاه في NAV
+      return true;
+    })
+  })).filter(g=>g.items.length>0); // إخفاء عنوان أي مجموعة لا تحتوي عنصرًا واحدًا ظاهرًا لهذا الدور — تعليق
+  // عنوان مجموعة "معلّق في الهواء" بلا أي رابط تحته (مثل "البيانات" لدور لا يملك استيراد/مطابقة) كان يظهر
+  // فارغًا في القائمة الجانبية، وهو ما يبدو كخلل بصري إضافي في نفس الشاشة رغم عدم اعتماد أي زر عليه.
+  navlist.innerHTML = visibleNav.map(g=>`
     <div class="nav-group-label">${g.group}</div>
-    ${g.items.filter(it=> it.employeeOnly ? STATE.role==='employee' : canViewCurrentRoute(it.id)).map(it=>`
-      <a href="#" class="navlink ${STATE.activeView===it.id?'active':''}" data-nav="${it.id}">
+    ${g.items.map(it=>`
+      <a href="#" class="navlink ${STATE.activeView===it.id?'active':''}" data-nav="${it.id}" ${it.employeeOnly?'data-selfview="1"':''}>
         <span class="ic">${it.ic}</span><span>${it.label}</span>
       </a>`).join('')}
   `).join('');
   navlist.querySelectorAll('[data-nav]').forEach(a=>{
-    a.addEventListener('click', e=>{ e.preventDefault(); closeSidebar(); navigate(a.dataset.nav); });
+    a.addEventListener('click', e=>{
+      e.preventDefault(); closeSidebar();
+      // روابط "كشف عمولتي"/"كشف راتبي الشهري" يجب أن تعرض دائمًا سجل المستخدم نفسه (لموظف المبيعات أو قائد
+      // الفريق)، بصرف النظر عن آخر موظف كان معروضًا في الجلسة (مثلًا لو كان قائد الفريق قد فتح كشف أحد أعضاء
+      // فريقه قبل ذلك) — لذا نمرّر معرّف المستخدم الحالي صراحةً بدل الاعتماد على selectedEmployeeId القديم.
+      const opts = {};
+      if(a.dataset.selfview==='1'){
+        const u = currentUser();
+        if(u && u.empId) opts.employeeId = u.empId;
+      }
+      navigate(a.dataset.nav, opts);
+    });
   });
 
   const user = currentUser();
@@ -3793,6 +3863,8 @@ function attachMatchHandlers(){
         STATE.periods.forEach(p=>{ p.rows = p.rows.filter(r=>r.emp!==emp.id); });
         STATE.policy.excludedEmployeeIds = STATE.policy.excludedEmployeeIds.filter(id=>id!==emp.id);
         delete STATE.employeeTargets[emp.id];
+        Object.keys(STATE.employeeTargetOverrides).forEach(pid=>{ delete STATE.employeeTargetOverrides[pid][emp.id]; if(Object.keys(STATE.employeeTargetOverrides[pid]).length===0) delete STATE.employeeTargetOverrides[pid]; });
+        delete STATE.employeeCommissionCaps[emp.id];
         Object.keys(STATE.commissions).forEach(pid=>{ delete STATE.commissions[pid][emp.id]; });
         if(STATE.selectedEmployeeId===emp.id) STATE.selectedEmployeeId = null;
         logAudit('حذف موظف', `حذف "${emp.name}" نهائيًا من النظام${hasHistory?' (بما في ذلك بيانات مبيعاته التاريخية)':''}`);
@@ -3895,15 +3967,60 @@ function renderPolicy(){
       </div>
 
       <div class="field" style="margin:14px 0 6px;"><label>الهدف الفردي الشهري لكل موظف (الحد الأدنى من الربح الشخصي لاستحقاق العمولة الأساسية عند عدم تحقيق هدف الشركة)</label></div>
-      <p style="font-size:11.5px;color:var(--text-mute);margin:0 0 10px;">اترك الحقل 0 إن كنت تريد اعتبار أي ربح شخصي موجب كافيًا لتحقيق الهدف الفردي (دون حد أدنى محدد).</p>
+      <p style="font-size:11.5px;color:var(--text-mute);margin:0 0 8px;">حدِّد هدفًا افتراضيًا لكل موظف يُستخدم لأي شهر لا يوجد له استثناء خاص أدناه، أو اختر شهرًا محددًا لتخصيص هدف مختلف له في ذلك الشهر تحديدًا فقط (بلا أي تأثير على باقي الأشهر). اترك الحقل 0 إن كنت تريد اعتبار أي ربح شخصي موجب كافيًا لتحقيق الهدف.</p>
+      <div class="field" style="max-width:340px;margin-bottom:10px;">
+        <label>عرض/تعديل الهدف لِـ</label>
+        <select id="targetPeriodSelect" data-targetperiodselect>
+          <option value="" ${!STATE.policyTargetPeriodId?'selected':''}>الهدف الافتراضي (كل الأشهر بلا استثناء)</option>
+          ${sortedPeriods().filter(periodUsesTargetModel).map(pr=>`<option value="${pr.id}" ${STATE.policyTargetPeriodId===pr.id?'selected':''}>استثناء لشهر: ${esc(pr.label)}</option>`).join('')}
+        </select>
+      </div>
+      ${STATE.policyTargetPeriodId ? `<div class="alert info" style="margin-bottom:10px;"><span class="ic">&#8505;</span><div>تُعدِّل الآن استثناء خاصًا بشهر "${esc(periodById(STATE.policyTargetPeriodId) ? periodById(STATE.policyTargetPeriodId).label : '')}" فقط. فعّل مربع "تخصيص" بجانب أي موظف لتحديد هدف مختلف له هذا الشهر تحديدًا؛ عطّله للرجوع لاستخدام هدفه الافتراضي تلقائيًا.</div></div>` : ''}
       <div class="tbl-wrap" style="max-height:280px;overflow-y:auto;">
         <table class="plain">
-          <thead><tr><th>الموظف</th><th>الهدف الفردي الشهري (ر.س)</th></tr></thead>
+          <thead><tr><th>الموظف</th><th>${STATE.policyTargetPeriodId?'الهدف لهذا الشهر تحديدًا (ر.س)':'الهدف الافتراضي (ر.س)'}</th></tr></thead>
           <tbody>
-          ${STATE.employees.filter(e=>e.status==='active').map(e=>`<tr>
-            <td>${esc(e.name)}</td>
-            <td><input type="number" class="empTargetInput" data-emp="${e.id}" value="${getEmployeeTarget(e.id)}" style="width:160px;padding:6px 9px;border:1px solid var(--border);border-radius:7px;" ${!can('edit_policy')?'disabled':''}></td>
-          </tr>`).join('')}
+          ${STATE.employees.filter(e=>e.status==='active').map(e=>{
+            const defaultVal = getEmployeeTarget(e.id);
+            if(!STATE.policyTargetPeriodId){
+              return `<tr>
+                <td>${esc(e.name)}</td>
+                <td><input type="number" class="empTargetInput" data-emp="${e.id}" value="${defaultVal}" style="width:160px;padding:6px 9px;border:1px solid var(--border);border-radius:7px;" ${!can('edit_policy')?'disabled':''}></td>
+              </tr>`;
+            }
+            const ov = STATE.employeeTargetOverrides[STATE.policyTargetPeriodId];
+            const hasOverride = !!(ov && ov[e.id]!==undefined && ov[e.id]!==null);
+            const overrideVal = hasOverride ? ov[e.id] : defaultVal;
+            return `<tr>
+              <td>${esc(e.name)}</td>
+              <td style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--text-mute);cursor:pointer;white-space:nowrap;">
+                  <input type="checkbox" class="empTargetOverrideEnable" data-emp="${e.id}" ${hasOverride?'checked':''} ${!can('edit_policy')?'disabled':''}> تخصيص
+                </label>
+                <input type="number" class="empTargetInput" data-emp="${e.id}" value="${overrideVal}" style="width:140px;padding:6px 9px;border:1px solid var(--border);border-radius:7px;" ${(!can('edit_policy')||!hasOverride)?'disabled':''}>
+                <span style="font-size:10.5px;color:var(--text-mute);">افتراضي: ${fmt(defaultVal,0)}</span>
+              </td>
+            </tr>`;
+          }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
+      <div class="field" style="margin:0 0 6px;"><label>سقف العمولة الشهرية لكل موظف (اختياري)</label></div>
+      <p style="font-size:11.5px;color:var(--text-mute);margin:0 0 10px;">حد أدنى مضمون و/أو حد أعلى للعمولة المحسوبة شهريًا لكل موظف — يُطبَّق تلقائيًا كل شهر على حدة بعد احتساب حصته من الوعاء أو عمولته الأساسية، وقبل أي تعديل يدوي. اترك أي حقل فارغًا لعدم وضع سقف من ذلك النوع.</p>
+      <div class="tbl-wrap" style="max-height:280px;overflow-y:auto;">
+        <table class="plain">
+          <thead><tr><th>الموظف</th><th>الحد الأدنى (ر.س)</th><th>الحد الأعلى (ر.س)</th></tr></thead>
+          <tbody>
+          ${STATE.employees.filter(e=>e.status==='active').map(e=>{
+            const cap = getEmployeeCommissionCap(e.id);
+            return `<tr>
+              <td>${esc(e.name)}</td>
+              <td><input type="number" class="empCapMinInput" data-emp="${e.id}" value="${cap.min==null?'':cap.min}" placeholder="بدون حد" style="width:140px;padding:6px 9px;border:1px solid var(--border);border-radius:7px;" ${!can('edit_policy')?'disabled':''}></td>
+              <td><input type="number" class="empCapMaxInput" data-emp="${e.id}" value="${cap.max==null?'':cap.max}" placeholder="بدون حد" style="width:140px;padding:6px 9px;border:1px solid var(--border);border-radius:7px;" ${!can('edit_policy')?'disabled':''}></td>
+            </tr>`;
+          }).join('')}
           </tbody>
         </table>
       </div>
@@ -4035,6 +4152,12 @@ function renderPolicy(){
   `;
 }
 function attachPolicyHandlers(){
+  document.querySelectorAll('.empTargetOverrideEnable').forEach(chk=>{
+    chk.onchange = ()=>{
+      const inp = document.querySelector(`.empTargetInput[data-emp="${chk.dataset.emp}"]`);
+      if(inp) inp.disabled = !chk.checked || !can('edit_policy');
+    };
+  });
   const blend = document.getElementById('weightBlend');
   if(blend) blend.oninput = ()=>{
     document.getElementById('weightBlendLabel').textContent = `${blend.value}% طلبات / ${100-blend.value}% مبيعات`;
@@ -4099,8 +4222,47 @@ function attachPolicyHandlers(){
     STATE.policy.individualFallback.rate = (Number(document.getElementById('fallbackRate').value)||0)/100;
     STATE.policy.vat.enabled = document.getElementById('vatEnabled').checked;
     STATE.policy.vat.rate = (Number(document.getElementById('vatRate').value)||0)/100;
-    document.querySelectorAll('.empTargetInput').forEach(inp=>{
-      STATE.employeeTargets[inp.dataset.emp] = Number(inp.value)||0;
+    if(STATE.policyTargetPeriodId){
+      // وضع تخصيص شهر محدد: كل موظف مفعَّل عليه مربع "تخصيص" يحصل على استثناء لهذا الشهر فقط؛ غير المفعَّل
+      // يُحذف استثناؤه إن كان موجودًا سابقًا (يرجع لاستخدام الهدف الافتراضي تلقائيًا).
+      const pid = STATE.policyTargetPeriodId;
+      const ov = STATE.employeeTargetOverrides[pid] || {};
+      document.querySelectorAll('.empTargetOverrideEnable').forEach(chk=>{
+        const empId = chk.dataset.emp;
+        const inp = document.querySelector(`.empTargetInput[data-emp="${empId}"]`);
+        if(chk.checked){ ov[empId] = Number(inp.value)||0; }
+        else{ delete ov[empId]; }
+      });
+      if(Object.keys(ov).length>0) STATE.employeeTargetOverrides[pid] = ov;
+      else delete STATE.employeeTargetOverrides[pid];
+    } else {
+      document.querySelectorAll('.empTargetInput').forEach(inp=>{
+        STATE.employeeTargets[inp.dataset.emp] = Number(inp.value)||0;
+      });
+    }
+    // سقف العمولة الشهرية لكل موظف (اختياري) — تحقّق أولًا أن الحد الأدنى لا يتجاوز الحد الأعلى لنفس الموظف
+    // عند تحديد الاثنين معًا، قبل أي حفظ، لتفادي سقف متضارب بالخطأ.
+    let capMismatch = null;
+    document.querySelectorAll('.empCapMinInput').forEach(inp=>{
+      const empId = inp.dataset.emp;
+      const maxInp = document.querySelector(`.empCapMaxInput[data-emp="${empId}"]`);
+      const minVal = inp.value.trim()==='' ? null : Number(inp.value);
+      const maxVal = maxInp && maxInp.value.trim()==='' ? null : Number(maxInp.value);
+      if(minVal!=null && maxVal!=null && minVal>maxVal && !capMismatch){
+        capMismatch = empById(empId)?.name || empId;
+      }
+    });
+    if(capMismatch){
+      toast(`تعذّر الحفظ: الحد الأدنى أكبر من الحد الأعلى لسقف عمولة "${capMismatch}" — صحّح القيمتين ثم أعد المحاولة`, 'danger', 6000);
+      return;
+    }
+    document.querySelectorAll('.empCapMinInput').forEach(inp=>{
+      const empId = inp.dataset.emp;
+      const maxInp = document.querySelector(`.empCapMaxInput[data-emp="${empId}"]`);
+      const minVal = inp.value.trim()==='' ? null : Number(inp.value);
+      const maxVal = maxInp && maxInp.value.trim()==='' ? null : Number(maxInp.value);
+      if(minVal===null && maxVal===null) delete STATE.employeeCommissionCaps[empId];
+      else STATE.employeeCommissionCaps[empId] = {min:minVal, max:maxVal};
     });
     const deptNames = document.querySelectorAll('.deptName');
     STATE.policy.departments.forEach((d,i)=>{
@@ -4132,7 +4294,9 @@ function attachPolicyHandlers(){
     STATE.policy.legacy.refundHandling = document.getElementById('refundHandling').value;
     STATE.policy.version += 1;
     STATE.policy.status = 'draft';
-    logAudit('تعديل سياسة العمولة', `تحديث السياسة إلى الإصدار v${STATE.policy.version} — مستويات التارجت (${STATE.policy.target.levels.map(l=>l.label+' ×'+l.costMultiplier+' → '+(l.rate*100).toFixed(0)+'%').join('، ')}) + أقسام لكل مستوى (${STATE.policy.departments.map(d=>d.name+': '+STATE.policy.target.levels.map(l=>(deptRateForLevel(d,l)*100).toFixed(1)+'%').join('/')).join('، ')}) + عمولة أساسية فردية ${STATE.policy.individualFallback.enabled?(STATE.policy.individualFallback.rate*100).toFixed(0)+'% (مفعّلة)':'(معطّلة)'} — أهداف فردية محدَّدة لـ${Object.values(STATE.employeeTargets).filter(v=>v>0).length} موظف — ضريبة القيمة المضافة ${STATE.policy.vat.enabled?(STATE.policy.vat.rate*100).toFixed(0)+'% (مفعّلة)':'(معطّلة)'}`);
+    const overridesCount = Object.values(STATE.employeeTargetOverrides).reduce((s,ov)=>s+Object.keys(ov).length,0);
+    const capsCount = Object.keys(STATE.employeeCommissionCaps).length;
+    logAudit('تعديل سياسة العمولة', `تحديث السياسة إلى الإصدار v${STATE.policy.version} — مستويات التارجت (${STATE.policy.target.levels.map(l=>l.label+' ×'+l.costMultiplier+' → '+(l.rate*100).toFixed(0)+'%').join('، ')}) + أقسام لكل مستوى (${STATE.policy.departments.map(d=>d.name+': '+STATE.policy.target.levels.map(l=>(deptRateForLevel(d,l)*100).toFixed(1)+'%').join('/')).join('، ')}) + عمولة أساسية فردية ${STATE.policy.individualFallback.enabled?(STATE.policy.individualFallback.rate*100).toFixed(0)+'% (مفعّلة)':'(معطّلة)'} — أهداف فردية افتراضية محدَّدة لـ${Object.values(STATE.employeeTargets).filter(v=>v>0).length} موظف، و${overridesCount} استثناء هدف خاص بشهر محدد لموظف بعينه — سقف عمولة (حد أدنى/أعلى) مفعَّل لـ${capsCount} موظف — ضريبة القيمة المضافة ${STATE.policy.vat.enabled?(STATE.policy.vat.rate*100).toFixed(0)+'% (مفعّلة)':'(معطّلة)'}`);
     saveState(); renderAll();
     toast('تم حفظ السياسة، وأصبحت الآن مسودة بانتظار الاعتماد', 'success');
   };
@@ -4536,6 +4700,9 @@ function renderStatement(){
       `:`<div class="alert danger" style="margin-top:14px;"><span class="ic">&#9888;</span><div>لا توجد عمولة هذا الشهر — لم يتحقق الهدف الشهري للشركة (ينقص ${sar(rec.targetInfo.monthlyCost-rec.targetInfo.totalProfit,0)} لتغطية التكاليف)، ولا توجد مبيعات شخصية مؤهلة تفعّل العمولة الأساسية الفردية.</div></div>`}
       `}
       ${!rec.targetInfo.hasOrders && rec.targetInfo.achieved? `<div class="alert info" style="margin-top:10px;"><span class="ic">&#8505;</span><div>لا تتوفر بيانات عدد الطلبات لهذا الشهر — تم الاعتماد على نسبة المبيعات فقط.</div></div>`:''}
+      ${rec.targetInfo.capApplied? `<div class="alert ${rec.targetInfo.capApplied==='min'?'info':'warn'}" style="margin-top:10px;"><span class="ic">&#128274;</span><div>${rec.targetInfo.capApplied==='min'
+        ? `تم رفع عمولتك هذا الشهر إلى الحد الأدنى المضمون المحدَّد لك (${sar(rec.targetInfo.capMin)}) — كانت ستُحتسب ${sar(rec.targetInfo.preCapAmount)} بدون هذا الضمان.`
+        : `تم تقييد عمولتك هذا الشهر عند الحد الأعلى المسموح به (${sar(rec.targetInfo.capMax)}) — كانت ستُحتسب ${sar(rec.targetInfo.preCapAmount)} بدون هذا السقف.`}</div></div>` : ''}
       ` : `
       <table class="plain">
         <tr><td>الربح الصافي الإجمالي</td><td style="text-align:left;">${sar(row.profit)}</td></tr>
@@ -4554,7 +4721,10 @@ function renderStatement(){
         ${rec.tierBreakdown.map(b=>`<tr><td>${esc(b.label||('من '+fmt(b.from,0)+' إلى '+(b.to===null?'∞':fmt(b.to,0))))}</td><td>${(b.rate*100).toFixed(0)}%</td><td class="num">${sar(b.base)}</td><td class="num">${sar(b.commission)}</td></tr>`).join('') || `<tr><td colspan="4" style="text-align:center;color:var(--text-mute);">—</td></tr>`}
         <tr style="font-weight:800;"><td colspan="3">إجمالي العمولة الأساسية</td><td class="num">${sar(rec.baseCommission)}</td></tr>
         </tbody>
-      </table>`}
+      </table>
+      ${rec.capInfo && rec.capInfo.capApplied? `<div class="alert ${rec.capInfo.capApplied==='min'?'info':'warn'}" style="margin-top:10px;"><span class="ic">&#128274;</span><div>${rec.capInfo.capApplied==='min'
+        ? `تم رفع عمولتك هذا الشهر إلى الحد الأدنى المضمون المحدَّد لك (${sar(rec.capInfo.capMin)}) — كانت ستُحتسب ${sar(rec.capInfo.preCapAmount)} بدون هذا الضمان.`
+        : `تم تقييد عمولتك هذا الشهر عند الحد الأعلى المسموح به (${sar(rec.capInfo.capMax)}) — كانت ستُحتسب ${sar(rec.capInfo.preCapAmount)} بدون هذا السقف.`}</div></div>` : ''}`}
 
       <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
       <div class="section-title" style="margin-bottom:10px;">توزيع الربح: عمولتك مقابل نصيب الشركة</div>
@@ -6009,6 +6179,9 @@ function attachViewHandlers(view){
   });
   document.querySelectorAll('[data-periodselect]').forEach(el=>{
     el.addEventListener('change', ()=>{ STATE.selectedPeriodId = el.value; saveState(); renderAll(); });
+  });
+  document.querySelectorAll('[data-targetperiodselect]').forEach(el=>{
+    el.addEventListener('change', ()=>{ STATE.policyTargetPeriodId = el.value || null; saveState(); renderAll(); });
   });
   document.querySelectorAll('[data-openstatement]').forEach(el=>{
     el.addEventListener('click', ()=> navigate('statement', {employeeId: el.dataset.openstatement}));
